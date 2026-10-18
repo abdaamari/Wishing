@@ -197,11 +197,14 @@ export default function WishForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mx-auto max-w-md space-y-4 rounded-3xl border border-white/80 bg-white/80 p-6 shadow-xl backdrop-blur"
+      className="mx-auto max-w-xl space-y-5 rounded-[28px] border border-white/80 bg-[#FFFCF3]/90 p-5 text-[#263F4A] shadow-[0_18px_55px_rgba(38,63,74,0.16)] ring-1 ring-[#D9A94D]/25 backdrop-blur-md sm:space-y-6 sm:p-8"
     >
       <div>
-        <label htmlFor="wish-name" className="mb-1 block text-sm font-medium">
-          Nama
+        <label
+          htmlFor="wish-name"
+          className="mb-2 block text-sm font-semibold text-[#426C78]"
+        >
+          Namamu
         </label>
         <input
           id="wish-name"
@@ -211,15 +214,18 @@ export default function WishForm() {
           value={formData.name}
           onChange={handleChange}
           maxLength={40}
-          className="w-full rounded-xl border border-primary/20 bg-white/80 p-3 outline-none focus:border-primary"
+          className="w-full rounded-2xl border border-[#C7D9D5] bg-white/80 px-4 py-3 text-[#263F4A] outline-none transition placeholder:text-[#82979A] focus:border-[#B78A39] focus:ring-4 focus:ring-[#F5D47B]/25 disabled:cursor-not-allowed disabled:bg-[#EEF1EA]"
           disabled={formData.is_anonymous}
           required={!formData.is_anonymous}
         />
       </div>
 
       <div>
-        <label htmlFor="wish-message" className="mb-1 block text-sm font-medium">
-          Pesan wish
+        <label
+          htmlFor="wish-message"
+          className="mb-2 block text-sm font-semibold text-[#426C78]"
+        >
+          Harapanmu
         </label>
         <textarea
           id="wish-message"
@@ -229,45 +235,56 @@ export default function WishForm() {
           onChange={handleChange}
           maxLength={280}
           rows={4}
-          className="w-full resize-none rounded-xl border border-primary/20 bg-white/80 p-3 outline-none focus:border-primary"
+          className="w-full resize-none rounded-2xl border border-[#C7D9D5] bg-white/80 px-4 py-3 text-[#263F4A] outline-none transition placeholder:text-[#82979A] focus:border-[#B78A39] focus:ring-4 focus:ring-[#F5D47B]/25"
           required
         />
+        <p className="mt-1 text-right text-xs tabular-nums text-[#789096]">
+          {formData.message.length}/280
+        </p>
       </div>
 
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">Warna kartu</legend>
+        <legend className="mb-3 text-sm font-semibold text-[#426C78]">
+          Pilih warna wish
+        </legend>
         <div className="flex flex-wrap gap-3">
           {['sky', 'butter', 'peach', 'mint', 'lavender'].map((color) => (
-            <label key={color} className="flex items-center gap-2">
+            <label
+              key={color}
+              className="flex cursor-pointer items-center gap-2 rounded-full border border-[#C7D9D5] bg-white/70 px-3 py-2 text-xs capitalize transition has-[:checked]:border-[#B78A39] has-[:checked]:bg-[#FFF5D8] has-[:checked]:shadow-sm"
+            >
               <input
                 type="radio"
                 name="color"
                 value={color}
                 checked={formData.color === color}
                 onChange={handleChange}
+                className="sr-only"
               />
               <span
                 aria-label={color}
-                className={`h-5 w-5 rounded-full bg-${color} ring-1 ring-primary/20`}
+                className={`h-5 w-5 rounded-full bg-${color} ring-1 ring-[#263F4A]/15`}
               />
+              {color}
             </label>
           ))}
         </div>
       </fieldset>
 
-      <label className="flex items-center gap-2 text-sm">
+      <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[#C7D9D5]/80 bg-white/50 px-4 py-3 text-sm text-[#52717A]">
         <input
           type="checkbox"
           name="is_anonymous"
           checked={formData.is_anonymous}
           onChange={handleChange}
+          className="h-4 w-4 accent-[#568E70]"
         />
-        <span>Kirim secara anonim</span>
+        <span>Kirim tanpa mencantumkan nama</span>
       </label>
 
-      <div>
+      <div className="rounded-2xl border border-[#C7D9D5]/80 bg-white/55 p-4 sm:p-5">
         <p className="mb-2 block text-sm font-medium">
-          Foto dari kamera <span aria-hidden="true">*</span>
+          Foto kenangan <span aria-hidden="true" className="text-[#B78A39]">*</span>
         </p>
         {cameraActive && (
           <video
@@ -276,14 +293,14 @@ export default function WishForm() {
             muted
             playsInline
             aria-label="Pratinjau kamera"
-            className="mb-3 max-h-72 w-full rounded-xl bg-black object-cover"
+            className="mb-3 max-h-72 w-full rounded-2xl bg-[#263F4A] object-cover shadow-md"
           />
         )}
         {photoPreviewUrl && !cameraActive && (
           <img
             src={photoPreviewUrl}
             alt="Pratinjau foto wish"
-            className="mb-3 max-h-56 w-full rounded-xl object-cover"
+            className="mb-3 max-h-64 w-full rounded-2xl object-cover shadow-md"
           />
         )}
         {!cameraActive && !photo && (
@@ -293,7 +310,7 @@ export default function WishForm() {
               setErrors([]);
               setCameraActive(true);
             }}
-            className="w-full rounded-xl border border-dashed border-primary/40 bg-white/60 px-4 py-3 text-sm hover:bg-white"
+            className="w-full rounded-2xl border border-dashed border-[#B78A39]/60 bg-[#FFF5D8]/60 px-4 py-3 text-sm font-medium text-[#426C78] transition hover:bg-[#FFF5D8]"
           >
             📷 Buka kamera
           </button>
@@ -303,7 +320,7 @@ export default function WishForm() {
             type="button"
             onClick={handleCapture}
             disabled={cameraStarting}
-            className="w-full rounded-xl bg-butter px-4 py-3 font-medium text-primary disabled:opacity-60"
+            className="w-full rounded-2xl bg-[#F5D47B] px-4 py-3 font-semibold text-[#5A4B2A] shadow-sm transition hover:bg-[#F0CB68] disabled:cursor-wait disabled:opacity-60"
           >
             {cameraStarting ? 'Membuka kamera...' : 'Ambil foto'}
           </button>
@@ -312,19 +329,22 @@ export default function WishForm() {
           <button
             type="button"
             onClick={handleRetake}
-            className="w-full rounded-xl border border-primary/30 px-4 py-3 text-sm"
+            className="w-full rounded-2xl border border-[#C7D9D5] bg-white/70 px-4 py-3 text-sm font-medium text-[#426C78] transition hover:bg-white"
           >
             Ambil ulang
           </button>
         )}
-        <p className="mt-1 text-xs text-primary/70">
+        <p className="mt-2 text-xs leading-relaxed text-[#789096]">
           Foto wajib, hanya bisa diambil langsung dari kamera, dan akan tampil
           di wall publik.
         </p>
       </div>
 
       {errors.length > 0 && (
-        <ul role="alert" className="space-y-1 text-sm text-red-700">
+        <ul
+          role="alert"
+          className="space-y-1 rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700"
+        >
           {errors.map((error, index) => (
             <li key={`${error}-${index}`}>{error}</li>
           ))}
@@ -335,7 +355,7 @@ export default function WishForm() {
         type="submit"
         whileTap={{ scale: 0.97 }}
         disabled={submitting}
-        className="w-full rounded-xl bg-butter py-3 font-semibold text-primary disabled:cursor-wait disabled:opacity-60"
+        className="w-full rounded-2xl bg-[#426C78] py-3.5 font-semibold text-white shadow-[0_8px_20px_rgba(66,108,120,0.22)] transition hover:bg-[#345A65] disabled:cursor-wait disabled:opacity-60"
       >
         {submitting ? 'Mengirim...' : 'Kirim Wish'}
       </motion.button>

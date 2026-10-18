@@ -188,7 +188,7 @@ export default function WishForm() {
         throw new Error(result.error || 'Wish gagal dikirim. Coba lagi.');
       }
 
-      router.push('/wall');
+      router.push('/thankyou');
     } catch (requestError) {
       setError(
         requestError instanceof Error ? requestError.message : 'Wish gagal dikirim.',

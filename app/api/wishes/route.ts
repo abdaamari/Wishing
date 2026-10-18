@@ -1,7 +1,6 @@
 import supabaseAdmin from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import { wishSchema } from '@/lib/validation';
-import { type WishInput } from '@/lib/types';
 
 // Simple in‑memory rate limiter (development safeguard only).
 // Keeps a map of IP → array of request timestamps (ms).
@@ -53,7 +52,11 @@ export async function POST(req: Request) {
     });
     if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: 'Invalid input', details: parsed.error.issues.map(i => i.message) },
+        {
+          success: false,
+          error: 'Invalid input.',
+          details: parsed.error.issues.map((issue) => issue.message),
+        },
         { status: 400 }
       );
     }
@@ -67,23 +70,18 @@ export async function POST(req: Request) {
     }
     if (!PHOTO_TYPES.has(photo.type) || photo.size > MAX_PHOTO_SIZE) {
       return NextResponse.json(
-        { success: false, error: 'Photo must be JPEG, PNG, or WebP and no larger than 5 MB.' },
+        {
+          success: false,
+          error: 'Photo must be JPEG, PNG, or WebP and no larger than 5 MB.',
+        },
         { status: 400 }
       );
     }
 
-    const data: WishInput = parsed.data;
-    // ----- Business rules -----
-    const name = data.is_anonymous
-      ? 'Anonymous'
-      : data.name?.trim() || 'Anonymous';
-
+    const data = parsed.data;
     const wishId = crypto.randomUUID();
-    const extension = photo.type === 'image/jpeg'
-      ? 'jpg'
-      : photo.type === 'image/png'
-        ? 'png'
-        : 'webp';
+    const extension =
+      photo.type === 'image/jpeg' ? 'jpg' : photo.type === 'image/png' ? 'png' : 'webp';
     const photoPath = `${wishId}.${extension}`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from(PHOTO_BUCKET)
@@ -96,7 +94,7 @@ export async function POST(req: Request) {
     if (uploadError) {
       console.error('Supabase photo upload error:', uploadError);
       return NextResponse.json(
-        { success: false, error: 'Failed to save photo' },
+        { success: false, error: 'Failed to save photo.' },
         { status: 500 }
       );
     }
@@ -108,18 +106,17 @@ export async function POST(req: Request) {
       .from('wishes')
       .insert({
         id: wishId,
-        name,
+        name: data.is_anonymous ? 'Anonymous' : data.name?.trim() || 'Anonymous',
         message: data.message.trim(),
         photo_url: photoData.publicUrl,
         color: data.color,
         is_anonymous: !!data.is_anonymous,
-        status: 'published', // force status – never trust client value
+        status: 'published',
       })
       .select()
       .single();
 
     if (error) {
-      // Do not expose internal Supabase error details to the client
       console.error('Supabase insert error:', error);
       const { error: cleanupError } = await supabaseAdmin.storage
         .from(PHOTO_BUCKET)
@@ -128,7 +125,7 @@ export async function POST(req: Request) {
         console.error('Supabase photo cleanup error:', cleanupError);
       }
       return NextResponse.json(
-        { success: false, error: 'Failed to save wish' },
+        { success: false, error: 'Failed to save wish.' },
         { status: 500 }
       );
     }

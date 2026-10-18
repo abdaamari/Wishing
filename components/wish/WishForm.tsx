@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { wishSchema } from '@/lib/validation';
 
-const photoMaxDimension = 1280;
+const PHOTO_MAX_DIMENSION = 1280;
+const PHOTO_MAX_SIZE = 5 * 1024 * 1024;
 
 async function capturePhoto(video: HTMLVideoElement): Promise<File> {
   if (!video.videoWidth || !video.videoHeight) {
@@ -14,7 +15,7 @@ async function capturePhoto(video: HTMLVideoElement): Promise<File> {
 
   const scale = Math.min(
     1,
-    photoMaxDimension / Math.max(video.videoWidth, video.videoHeight),
+    PHOTO_MAX_DIMENSION / Math.max(video.videoWidth, video.videoHeight),
   );
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(video.videoWidth * scale);
@@ -32,22 +33,29 @@ async function capturePhoto(video: HTMLVideoElement): Promise<File> {
   return new File([blob], 'wish-camera.jpg', { type: 'image/jpeg' });
 }
 
+const colorSwatches: Record<string, string> = {
+  sky: 'bg-sky',
+  butter: 'bg-butter',
+  peach: 'bg-peach',
+  mint: 'bg-mint',
+  lavender: 'bg-lavender',
+};
+
 export default function WishForm() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    name: '',
-    message: '',
-    color: 'sky',
-    is_anonymous: false,
-  });
+  const [name, setName] = useState('');
+  const [message, setMessage] = useState('');
+  const [color, setColor] = useState('sky');
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!cameraActive) return;
@@ -57,16 +65,15 @@ export default function WishForm() {
     if (!window.isSecureContext) {
       setCameraActive(false);
       setCameraStarting(false);
-      setErrors([
-        'Akses kamera membutuhkan HTTPS. Halaman melalui alamat IP lokal HTTP bisa dibuka, tetapi kamera hanya aktif di HTTPS atau localhost.',
-      ]);
+      setCameraError(
+        'Akses kamera membutuhkan HTTPS atau localhost. Halaman IP lokal HTTP tidak dapat membuka kamera.',
+      );
       return;
     }
-
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraActive(false);
       setCameraStarting(false);
-      setErrors(['Browser ini tidak mendukung akses kamera.']);
+      setCameraError('Browser ini tidak mendukung akses kamera.');
       return;
     }
 
@@ -77,21 +84,21 @@ export default function WishForm() {
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
-
         cameraStreamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           return videoRef.current.play();
         }
       })
-      .catch((error: unknown) => {
+      .catch((cameraRequestError: unknown) => {
         if (cancelled) return;
         setCameraActive(false);
-        setErrors([
-          error instanceof Error && error.name === 'NotAllowedError'
+        setCameraError(
+          cameraRequestError instanceof Error &&
+            cameraRequestError.name === 'NotAllowedError'
             ? 'Izin kamera ditolak. Izinkan akses kamera di pengaturan browser.'
-            : 'Kamera tidak bisa dibuka. Pastikan perangkat memiliki kamera dan aksesnya tersedia.',
-        ]);
+            : 'Kamera tidak bisa dibuka. Pastikan perangkat memiliki kamera.',
+        );
       })
       .finally(() => {
         if (!cancelled) setCameraStarting(false);
@@ -113,56 +120,53 @@ export default function WishForm() {
     [photoPreviewUrl],
   );
 
-  const handleChange = (
-    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const { name, value, type } = event.target;
-    const checked =
-      event.target instanceof HTMLInputElement && event.target.checked;
-    setFormData((previous) => ({
-      ...previous,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-  };
+  useEffect(() => {
+    if (!photo) {
+      setPhotoPreviewUrl('');
+      return;
+    }
 
-  const handleCapture = async () => {
-    setErrors([]);
+    const url = URL.createObjectURL(photo);
+    setPhotoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
+
+  async function handleCapture() {
+    setCameraError('');
     try {
       const video = videoRef.current;
       if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
         throw new Error('Kamera belum siap. Tunggu sebentar lalu coba lagi.');
       }
-      const capturedPhoto = await capturePhoto(video);
-      setPhoto(capturedPhoto);
-      setPhotoPreviewUrl(URL.createObjectURL(capturedPhoto));
+      setPhoto(await capturePhoto(video));
       setCameraActive(false);
-    } catch (error) {
-      setErrors([
-        error instanceof Error ? error.message : 'Foto gagal diambil.',
-      ]);
+    } catch (captureError) {
+      setCameraError(
+        captureError instanceof Error ? captureError.message : 'Foto gagal diambil.',
+      );
     }
-  };
+  }
 
-  const handleRetake = () => {
-    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-    setPhoto(null);
-    setPhotoPreviewUrl('');
-    setErrors([]);
-    setCameraActive(true);
-  };
+  async function sendWish() {
+    if (submitting) return;
+    setError('');
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setErrors([]);
-
-    const parsed = wishSchema.safeParse(formData);
+    const parsed = wishSchema.safeParse({
+      name: isAnonymous ? undefined : name,
+      message,
+      color,
+      is_anonymous: isAnonymous,
+    });
     if (!parsed.success) {
-      setErrors(parsed.error.issues.map((issue) => issue.message));
+      setError(parsed.error.issues[0]?.message ?? 'Periksa isi wish-mu.');
       return;
     }
-
     if (!photo) {
-      setErrors(['Ambil foto menggunakan kamera terlebih dahulu.']);
+      setError('Ambil foto terlebih dahulu.');
+      return;
+    }
+    if (photo.size > PHOTO_MAX_SIZE) {
+      setError('Foto harus berukuran maksimal 5 MB.');
       return;
     }
 
@@ -179,67 +183,77 @@ export default function WishForm() {
         method: 'POST',
         body: payload,
       });
-      const result = await response.json();
+      const result: { success?: boolean; error?: string } = await response.json();
       if (!response.ok || !result.success) {
         throw new Error(result.error || 'Wish gagal dikirim. Coba lagi.');
       }
 
-      router.push('/');
-    } catch (error) {
-      setErrors([
-        error instanceof Error ? error.message : 'Wish gagal dikirim.',
-      ]);
+      router.push('/wall');
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error ? requestError.message : 'Wish gagal dikirim.',
+      );
     } finally {
       setSubmitting(false);
     }
-  };
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendWish();
+  }
+
+  function handleSwipeKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void sendWish();
+    }
+  }
 
   return (
     <form
-      onSubmit={handleSubmit}
       className="mx-auto max-w-xl space-y-5 rounded-[28px] border border-white/80 bg-[#FFFCF3]/90 p-5 text-[#263F4A] shadow-[0_18px_55px_rgba(38,63,74,0.16)] ring-1 ring-[#D9A94D]/25 backdrop-blur-md sm:space-y-6 sm:p-8"
+      onSubmit={handleSubmit}
     >
       <div>
         <label
-          htmlFor="wish-name"
           className="mb-2 block text-sm font-semibold text-[#426C78]"
+          htmlFor="wish-name"
         >
           Namamu
         </label>
         <input
-          id="wish-name"
-          type="text"
-          name="name"
-          placeholder="Nama kamu"
-          value={formData.name}
-          onChange={handleChange}
-          maxLength={40}
           className="w-full rounded-2xl border border-[#C7D9D5] bg-white/80 px-4 py-3 text-[#263F4A] outline-none transition placeholder:text-[#82979A] focus:border-[#B78A39] focus:ring-4 focus:ring-[#F5D47B]/25 disabled:cursor-not-allowed disabled:bg-[#EEF1EA]"
-          disabled={formData.is_anonymous}
-          required={!formData.is_anonymous}
+          disabled={isAnonymous}
+          id="wish-name"
+          maxLength={40}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Nama kamu"
+          required={!isAnonymous}
+          value={name}
         />
       </div>
 
       <div>
         <label
-          htmlFor="wish-message"
           className="mb-2 block text-sm font-semibold text-[#426C78]"
+          htmlFor="wish-message"
         >
           Harapanmu
         </label>
         <textarea
-          id="wish-message"
-          name="message"
-          placeholder="Tulis harapanmu (maks. 280 karakter)"
-          value={formData.message}
-          onChange={handleChange}
-          maxLength={280}
-          rows={4}
           className="w-full resize-none rounded-2xl border border-[#C7D9D5] bg-white/80 px-4 py-3 text-[#263F4A] outline-none transition placeholder:text-[#82979A] focus:border-[#B78A39] focus:ring-4 focus:ring-[#F5D47B]/25"
+          id="wish-message"
+          maxLength={280}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="Tulis harapanmu (maks. 280 karakter)"
           required
+          rows={4}
+          value={message}
         />
-        <p className="mt-1 text-right text-xs tabular-nums text-[#789096]">
-          {formData.message.length}/280
+        <p className="mt-1 flex justify-between text-xs text-[#789096]">
+          <span>Emoji bisa diketik langsung dari keyboard HP.</span>
+          <span className="tabular-nums">{message.length}/280</span>
         </p>
       </div>
 
@@ -248,24 +262,24 @@ export default function WishForm() {
           Pilih warna wish
         </legend>
         <div className="flex flex-wrap gap-3">
-          {['sky', 'butter', 'peach', 'mint', 'lavender'].map((color) => (
+          {Object.entries(colorSwatches).map(([wishColor, swatch]) => (
             <label
-              key={color}
               className="flex cursor-pointer items-center gap-2 rounded-full border border-[#C7D9D5] bg-white/70 px-3 py-2 text-xs capitalize transition has-[:checked]:border-[#B78A39] has-[:checked]:bg-[#FFF5D8] has-[:checked]:shadow-sm"
+              key={wishColor}
             >
               <input
-                type="radio"
-                name="color"
-                value={color}
-                checked={formData.color === color}
-                onChange={handleChange}
+                checked={color === wishColor}
                 className="sr-only"
+                name="color"
+                onChange={() => setColor(wishColor)}
+                type="radio"
+                value={wishColor}
               />
               <span
-                aria-label={color}
-                className={`h-5 w-5 rounded-full bg-${color} ring-1 ring-[#263F4A]/15`}
+                aria-label={wishColor}
+                className={`h-5 w-5 rounded-full ${swatch} ring-1 ring-[#263F4A]/15`}
               />
-              {color}
+              {wishColor}
             </label>
           ))}
         </div>
@@ -273,11 +287,10 @@ export default function WishForm() {
 
       <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[#C7D9D5]/80 bg-white/50 px-4 py-3 text-sm text-[#52717A]">
         <input
-          type="checkbox"
-          name="is_anonymous"
-          checked={formData.is_anonymous}
-          onChange={handleChange}
+          checked={isAnonymous}
           className="h-4 w-4 accent-[#568E70]"
+          onChange={(event) => setIsAnonymous(event.target.checked)}
+          type="checkbox"
         />
         <span>Kirim tanpa mencantumkan nama</span>
       </label>
@@ -307,7 +320,7 @@ export default function WishForm() {
           <button
             type="button"
             onClick={() => {
-              setErrors([]);
+              setCameraError('');
               setCameraActive(true);
             }}
             className="w-full rounded-2xl border border-dashed border-[#B78A39]/60 bg-[#FFF5D8]/60 px-4 py-3 text-sm font-medium text-[#426C78] transition hover:bg-[#FFF5D8]"
@@ -318,7 +331,7 @@ export default function WishForm() {
         {cameraActive && (
           <button
             type="button"
-            onClick={handleCapture}
+            onClick={() => void handleCapture()}
             disabled={cameraStarting}
             className="w-full rounded-2xl bg-[#F5D47B] px-4 py-3 font-semibold text-[#5A4B2A] shadow-sm transition hover:bg-[#F0CB68] disabled:cursor-wait disabled:opacity-60"
           >
@@ -328,37 +341,78 @@ export default function WishForm() {
         {photo && !cameraActive && (
           <button
             type="button"
-            onClick={handleRetake}
+            onClick={() => {
+              setPhoto(null);
+              setCameraError('');
+              setCameraActive(true);
+            }}
             className="w-full rounded-2xl border border-[#C7D9D5] bg-white/70 px-4 py-3 text-sm font-medium text-[#426C78] transition hover:bg-white"
           >
             Ambil ulang
           </button>
         )}
+        {cameraError && (
+          <p className="mt-2 text-sm text-red-700" role="alert">
+            {cameraError}
+          </p>
+        )}
         <p className="mt-2 text-xs leading-relaxed text-[#789096]">
-          Foto wajib, hanya bisa diambil langsung dari kamera, dan akan tampil
-          di wall publik.
+          Foto wajib, hanya bisa diambil langsung dari kamera, dan akan tampil di wall publik.
         </p>
       </div>
 
-      {errors.length > 0 && (
-        <ul
+      {error && (
+        <p
+          className="rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700"
           role="alert"
-          className="space-y-1 rounded-2xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-700"
         >
-          {errors.map((error, index) => (
-            <li key={`${error}-${index}`}>{error}</li>
-          ))}
-        </ul>
+          {error}
+        </p>
       )}
 
-      <motion.button
-        type="submit"
-        whileTap={{ scale: 0.97 }}
-        disabled={submitting}
-        className="w-full rounded-2xl bg-[#426C78] py-3.5 font-semibold text-white shadow-[0_8px_20px_rgba(66,108,120,0.22)] transition hover:bg-[#345A65] disabled:cursor-wait disabled:opacity-60"
-      >
-        {submitting ? 'Mengirim...' : 'Kirim Wish'}
-      </motion.button>
+      <div className="rounded-2xl border border-[#D9A94D]/40 bg-[#FFF5D8]/60 p-4 text-center">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[#789096]">
+          Swipe up to send your wish
+        </p>
+        <motion.div
+          aria-describedby="wish-swipe-hint"
+          aria-label="Swipe up to send your wish"
+          className="mx-auto flex w-full max-w-xs cursor-grab touch-pan-x flex-col items-center rounded-2xl bg-[#426C78] px-5 py-4 text-white shadow-lg active:cursor-grabbing"
+          drag="y"
+          dragConstraints={{ top: -130, bottom: 0 }}
+          dragElastic={0.18}
+          dragMomentum={false}
+          onDragEnd={(_, info) => {
+            if (info.offset.y < -70 || info.velocity.y < -500) void sendWish();
+          }}
+          onKeyDown={handleSwipeKeyDown}
+          role="button"
+          tabIndex={0}
+          whileDrag={{ scale: 0.98 }}
+        >
+          <motion.span
+            aria-hidden="true"
+            animate={{ y: [0, -5, 0] }}
+            className="text-2xl"
+            transition={{ duration: 1.3, repeat: Infinity }}
+          >
+            ↑
+          </motion.span>
+          <span className="mt-1 font-semibold">
+            {submitting ? 'Meluncurkan wish…' : 'Tarik kartu ini ke atas'}
+          </span>
+        </motion.div>
+        <p className="mt-3 text-xs text-[#789096]" id="wish-swipe-hint">
+          Satu scan untuk satu wish. Scan barcode lagi kalau mau mengirim wish lain.
+        </p>
+        <button
+          className="mt-3 rounded-full px-4 py-2 text-xs font-medium text-[#426C78] underline underline-offset-2 disabled:opacity-60"
+          disabled={submitting}
+          type="submit"
+        >
+          {submitting ? 'Mengirim…' : 'Atau ketuk untuk mengirim'}
+        </button>
+      </div>
     </form>
   );
 }

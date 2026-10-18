@@ -1,17 +1,22 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase/client';
 import WishCanvas from '@/components/wall/WishCanvas';
 import type { Wish } from '@/lib/types';
 import QRCode from '@/components/shared/QRCode';
+import BrandIdentity from '@/components/shared/BrandIdentity';
+import WallMusic from '@/components/wall/WallMusic';
 
 export default function WallPage() {
   const [wishes, setWishes] = useState<Wish[]>([]);
+  const [incomingWishId, setIncomingWishId] = useState<string | null>(null);
   const [qrUrl, setQrUrl] = useState('');
   const [qrError, setQrError] = useState('');
+  const knownWishIdsRef = useRef(new Set<string>());
+  const initialWishesLoadedRef = useRef(false);
 
   useEffect(() => {
     const envUrl = process.env.NEXT_PUBLIC_SITE_URL ?? '';
@@ -73,6 +78,8 @@ export default function WallPage() {
         .order('created_at', { ascending: false });
 
       if (isMounted && !error && data) {
+        for (const wish of data) knownWishIdsRef.current.add(wish.id);
+        initialWishesLoadedRef.current = true;
         setWishes(data as Wish[]);
       }
 
@@ -93,6 +100,12 @@ export default function WallPage() {
           const oldWish = payload.old as Wish | null;
 
           if (newWish && newWish.status === 'published') {
+            const isNewWish = !knownWishIdsRef.current.has(newWish.id);
+            knownWishIdsRef.current.add(newWish.id);
+            if (isNewWish && initialWishesLoadedRef.current) {
+              setIncomingWishId(newWish.id);
+            }
+
             setWishes((prev) => {
               const index = prev.findIndex(
                 (wish) => wish.id === newWish.id,
@@ -108,14 +121,16 @@ export default function WallPage() {
             });
           }
 
-          // Remove deleted or newly hidden published wishes.
-          if (
-            oldWish &&
-            oldWish.status === 'published' &&
-            (!newWish || newWish.status !== 'published')
-          ) {
+          const removedWishId =
+            newWish && newWish.status !== 'published'
+              ? newWish.id
+              : payload.eventType === 'DELETE'
+                ? oldWish?.id
+                : undefined;
+          if (removedWishId) {
+            knownWishIdsRef.current.delete(removedWishId);
             setWishes((prev) =>
-              prev.filter((wish) => wish.id !== oldWish.id),
+              prev.filter((wish) => wish.id !== removedWishId),
             );
           }
         },
@@ -262,7 +277,7 @@ export default function WallPage() {
           transition={{ duration: 0.7 }}
           className="flex items-center gap-3"
         >
-          
+          <BrandIdentity className="rounded-full border border-white/70 bg-[#FFFDF5]/80 px-3 py-1.5 shadow-sm backdrop-blur-md sm:px-4" />
         </motion.div>
 
         <motion.div
@@ -329,8 +344,9 @@ export default function WallPage() {
 
       {/* WISH CANVAS */}
       <main className="absolute inset-0 z-[5]">
+        <WallMusic />
         <div className="absolute inset-0">
-          <WishCanvas wishes={wishes} />
+          <WishCanvas wishes={wishes} incomingWishId={incomingWishId} />
         </div>
       </main>
 

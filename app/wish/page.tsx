@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import WishForm from '@/components/wish/WishForm';
+import BrandIdentity from '@/components/shared/BrandIdentity';
 
 export default function WishPage() {
   return (
@@ -68,9 +69,7 @@ export default function WishPage() {
           <span aria-hidden="true">←</span>
           <span>Kembali ke wall</span>
         </Link>
-        <span className="rounded-full border border-white/70 bg-[#FFFDF5]/75 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#426C78] shadow-sm backdrop-blur sm:text-xs">
-          A little wish
-        </span>
+        <BrandIdentity className="rounded-full border border-white/70 bg-[#FFFDF5]/75 px-3 py-1.5 shadow-sm backdrop-blur" />
       </header>
 
       <section className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-12 pt-12 sm:px-8 sm:pt-16">

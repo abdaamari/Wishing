@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  animate,
   motion,
   useMotionValue,
   useReducedMotion,
@@ -79,12 +80,15 @@ function MovingWish({
   wish,
   index,
   origin,
+  spawnFrom,
   spawnOrder,
   register,
+  onSpawnComplete,
 }: {
   wish: Wish;
   index: number;
   origin?: CardOrigin;
+  spawnFrom?: { x: number; y: number };
   spawnOrder: number;
   register: (
     id: string,
@@ -92,13 +96,40 @@ function MovingWish({
     x: MotionValue<number>,
     y: MotionValue<number>,
   ) => void;
+  onSpawnComplete: (id: string) => void;
 }) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
+  const reducedMotion = useReducedMotion();
   const setRef = useCallback(
     (element: HTMLDivElement | null) => register(wish.id, element, x, y),
     [register, wish.id, x, y],
   );
+
+  useEffect(() => {
+    if (!spawnFrom || reducedMotion) {
+      if (spawnFrom) onSpawnComplete(wish.id);
+      return;
+    }
+
+    const controls = animate(
+      `[data-wish-content="${wish.id}"]`,
+      {
+        x: [spawnFrom.x, 0],
+        y: [spawnFrom.y, 0],
+        scale: [0.42, 1],
+        rotate: [2, 0],
+        opacity: [0, 1],
+      },
+      {
+        duration: 1.25,
+        ease: [0.16, 1, 0.3, 1],
+      },
+    );
+
+    void controls.then(() => onSpawnComplete(wish.id));
+    return () => controls.stop();
+  }, [animate, onSpawnComplete, reducedMotion, spawnFrom, wish.id]);
 
   return (
     <motion.div
@@ -118,27 +149,42 @@ function MovingWish({
       animate={{ opacity: 1 }}
       transition={{ opacity: { duration: 0.6, delay: index * 0.08 } }}
     >
-      {wish.photo_url && (
-        <img
-          src={wish.photo_url}
-          alt={`Foto wish dari ${wish.name}`}
-          className="mb-2 aspect-[4/3] w-full rounded-xl object-cover"
-          draggable={false}
-        />
-      )}
-      <p className="font-serif text-sm md:text-base">{wish.message}</p>
-      <p className="mt-1 text-xs md:text-sm">- {wish.name}</p>
+      <div
+        data-wish-content={wish.id}
+        style={spawnFrom ? { opacity: 0 } : undefined}
+      >
+        {wish.photo_url && (
+          <img
+            src={wish.photo_url}
+            alt={`Foto wish dari ${wish.name}`}
+            className="mb-2 aspect-[4/3] w-full rounded-xl object-cover"
+            draggable={false}
+          />
+        )}
+        <p className="font-serif text-sm md:text-base">{wish.message}</p>
+        <p className="mt-1 text-xs md:text-sm">- {wish.name}</p>
+      </div>
     </motion.div>
   );
 }
 
-function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
+function WishMotionCanvas({
+  wishes,
+  incomingWishId,
+}: {
+  wishes: Wish[];
+  incomingWishId?: string | null;
+}) {
   const shouldReduceMotion = useReducedMotion();
   const stageRef = useRef<HTMLDivElement>(null);
   const cardsRef = useRef(new Map<string, MovingCard>());
   const nextSpawnOrderRef = useRef(0);
+  const spawningIdsRef = useRef(new Set<string>());
   const [positioned, setPositioned] = useState(false);
   const [origins, setOrigins] = useState<Record<string, CardOrigin>>({});
+  const [spawnOffsets, setSpawnOffsets] = useState<
+    Record<string, { x: number; y: number }>
+  >({});
 
   const registerCard = useCallback(
     (
@@ -172,6 +218,16 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
     [],
   );
 
+  const finishSpawn = useCallback((id: string) => {
+    spawningIdsRef.current.delete(id);
+    setSpawnOffsets((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
   useLayoutEffect(() => {
     const stage = stageRef.current;
     if (!stage || wishes.length === 0) return;
@@ -190,25 +246,28 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
         }
       : null;
     const nextOrigins: Record<string, CardOrigin> = {};
+    const nextSpawnOffsets: Record<string, { x: number; y: number }> = {};
+    const cardsToSpawn = new Set<string>();
     const cards = wishes
       .map((wish) => {
         const card = cardsRef.current.get(wish.id);
         if (!card) return null;
 
         const rect = card.element.getBoundingClientRect();
-        const initialX = Math.max(0, Math.min(
+        const isNewCard = !card.initialized;
+        const targetX = Math.max(0, Math.min(
           card.initialized ? card.left + card.x.get() : rect.left - stageRect.left,
           stageRect.width - rect.width,
         ));
-        const initialY = Math.max(0, Math.min(
+        const targetY = Math.max(0, Math.min(
           card.initialized ? card.top + card.y.get() : rect.top - stageRect.top,
           stageRect.height - rect.height,
         ));
         const direction = card.spawnOrder * 2.399;
         const speed = 20 + (card.spawnOrder % 4) * 3;
 
-        card.left = initialX;
-        card.top = initialY;
+        card.left = targetX;
+        card.top = targetY;
         card.width = rect.width;
         card.height = rect.height;
         if (!card.initialized || (card.vx === 0 && card.vy === 0)) {
@@ -219,10 +278,14 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
         card.y.set(0);
         card.initialized = true;
         nextOrigins[wish.id] = {
-          left: initialX,
-          top: initialY,
+          left: targetX,
+          top: targetY,
           width: rect.width,
         };
+
+        if (wish.id === incomingWishId && isNewCard) {
+          cardsToSpawn.add(wish.id);
+        }
 
         return card;
       })
@@ -271,6 +334,19 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
       }
     }
 
+    if (!shouldReduceMotion) {
+      for (const card of cards) {
+        if (!cardsToSpawn.has(card.id)) continue;
+        const startX = (stageRect.width - card.width) / 2;
+        const startY = stageRect.height - card.height * 0.45;
+        nextSpawnOffsets[card.id] = {
+          x: startX - card.left,
+          y: startY - card.top,
+        };
+        spawningIdsRef.current.add(card.id);
+      }
+    }
+
     if (qrZone) {
       for (const card of cards) {
         const x = worldX(card);
@@ -301,8 +377,9 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
     }
 
     setOrigins(nextOrigins);
+    setSpawnOffsets((current) => ({ ...current, ...nextSpawnOffsets }));
     setPositioned(true);
-  }, [wishes]);
+  }, [incomingWishId, shouldReduceMotion, wishes]);
 
   useEffect(() => {
     if (!positioned) return;
@@ -336,6 +413,8 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
         : null;
 
       for (const card of cards) {
+        if (spawningIdsRef.current.has(card.id)) continue;
+
         if (card.vx === 0 && card.vy === 0) {
           const direction = card.spawnOrder * 2.399;
           const speed = 20 + (card.spawnOrder % 4) * 3;
@@ -440,8 +519,10 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
               wish={wish}
               index={index}
               origin={origins[wish.id]}
+              spawnFrom={spawnOffsets[wish.id]}
               spawnOrder={cardsRef.current.get(wish.id)?.spawnOrder ?? index}
               register={registerCard}
+              onSpawnComplete={finishSpawn}
             />
           ))}
         </div>
@@ -450,8 +531,14 @@ function WishMotionCanvas({ wishes }: { wishes: Wish[] }) {
   );
 }
 
-export default function WishCanvas({ wishes }: { wishes: Wish[] }) {
+export default function WishCanvas({
+  wishes,
+  incomingWishId,
+}: {
+  wishes: Wish[];
+  incomingWishId?: string | null;
+}) {
   return (
-    <WishMotionCanvas wishes={wishes} />
+    <WishMotionCanvas wishes={wishes} incomingWishId={incomingWishId} />
   );
 }

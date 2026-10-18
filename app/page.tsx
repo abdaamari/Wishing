@@ -1,9 +1,11 @@
 import Link from 'next/link';
-import QRCode from '../components/shared/QRCode';
+import QRCode from '@/components/shared/QRCode';
+import BrandIdentity from '@/components/shared/BrandIdentity';
 
 export default function HomePage() {
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen p-4 bg-sky">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-sky p-4">
+      <BrandIdentity className="mb-8" />
       <h1 className="text-5xl font-serif text-primary mb-6 text-center">
         A Little Wish Goes a Long Way
       </h1>
